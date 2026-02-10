@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 from dotenv import load_dotenv
 from google import genai
@@ -13,39 +14,50 @@ if api_key == None:
     raise Exception("the api key is not define or incorrect.")
 
 #Main function for sending prompt to ai
+
 def general_response(user_input, verbose=False):
     #new list of user's prompts
     messages = [types.Content(role="user", parts=[types.Part(text=user_input)])]
-    response = client.models.generate_content(
-        model = "gemini-2.5-flash",
-        contents = messages,
-        config = types.GenerateContentConfig(
-        tools=[available_functions], 
-        system_instruction=system_prompt)
-    )    
-    if verbose:
-        print(f"User prompt: {user_input}")
-        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    function_results = []
+    for _ in range(20):
+        response = client.models.generate_content(
+            model = "gemini-2.5-flash",
+            contents = messages,
+            config = types.GenerateContentConfig(
+            tools=[available_functions], 
+            system_instruction=system_prompt)
+        )
+        if response.candidates:
+            for candidate in response.candidates:
+                messages.append(candidate.content)
+            
+        if verbose:
+            print(f"User prompt: {user_input}")
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    function_calls = response.function_calls
-    if function_calls:
-        for function_call in function_calls:        
-            #print(f"Calling function: {function_call.name}{function_call.args}.")
-            function_call_results = call_function(function_call, verbose)
-            if not function_call_results.parts:
-                raise Exception("Error")
-            if function_call_results.parts[0].function_response == None:
-                raise Exception("Function response is None")
-            if function_call_results.parts[0].function_response.response == None:
-                raise Exception("Actual function result is None")
-            function_results.append(function_call_results.parts[0])
-            if verbose:
-                print(f"-> {function_call_results.parts[0].function_response.response}")
-    else:
-        print(response.text)
+        function_results = []
+        function_calls = response.function_calls
+
+        if function_calls:
+            for function_call in function_calls:        
+                #print(f"Calling function: {function_call.name}{function_call.args}.")
+                function_call_results = call_function(function_call, verbose)
+                if not function_call_results.parts:
+                    raise Exception("Error")
+                if function_call_results.parts[0].function_response == None:
+                    raise Exception("Function response is None")
+                if function_call_results.parts[0].function_response.response == None:
+                    raise Exception("Actual function result is None")
+                function_results.append(function_call_results.parts[0])
+                if verbose:
+                    print(f"-> {function_call_results.parts[0].function_response.response}")
+            messages.append(types.Content(role='user', parts=function_results))
+        else:
+            print(response.text)
+            return response.text
+    print("Agent hit max iterations.")
+    sys.exit(1)
 
 #argument parser
 parser = argparse.ArgumentParser(description="Chatbot")
@@ -55,4 +67,4 @@ args = parser.parse_args()
 
 
 #Run code ----------------------------------------------
-general_response(args.user_prompt, verbose=args.verbose)
+general_response(args.user_prompt, verbose=args.verbose)     
